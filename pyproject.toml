@@ -1,0 +1,56 @@
+[project]
+name = "transformer_lm"
+version = "0.1.0"
+description = "Decoder-only Transformer LM + byte-level BPE tokenizer, trained from scratch on TinyStories and OpenWebText."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "einops>=0.8",
+    "jaxtyping>=0.3",
+    "numpy>=2.4",
+    "psutil>=7",
+    "regex>=2026.3.32",
+    "torch>=2.12",
+    "tqdm>=4.67",
+    "wandb>=0.25",
+    "matplotlib>=3.10.8",
+    "gradio>=6.13.0",
+]
+
+# SOL (speed-of-light) extra for the B200/B300 45-min run. Blackwell = sm100 +
+# CUDA 13.3 on this box (torch 2.12 cu13). Only the CLEANLY-RESOLVABLE deps live
+# here; the CuTeDSL chain (cutlass-dsl 4.6.0 + quack 0.6.1 + gram-newton-schulz
+# --no-deps) and FA4-from-source have a version conflict (GNS pins cutlass 4.5.2)
+# and a source build, so they are installed IN ORDER by scripts/setup_sol_env.sh
+# -- run that WHEN A GPU IS FREE (it compiles kernels and needs a device).
+#
+# TE latest (v2.16.1/v2.17) requires only torch>=2.1 -> torch 2.12 is supported,
+# and TE already depends on nvidia-cudnn-frontend>=1.25.
+[project.optional-dependencies]
+sol = [
+    "transformer-engine[pytorch]>=2.16",  # cuDNN fused RMSNorm/attn, FP8; torch>=2.1 (2.12 ok)
+    "nvidia-cudnn-cu13==9.24.0.43",       # LATEST cuDNN; ABI-compatible over torch 2.12/2.13's 9.20
+    "nvidia-cudnn-frontend>=1.26",        # cudnn-frontend python API (base only; not the [cutedsl] extra)
+]
+
+[build-system]
+requires = ["uv_build>=0.11.0,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "transformer_lm"
+module-root = ""
+
+[tool.uv]
+package = true
+python-preference = "managed"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint.extend-per-file-ignores]
+"__init__.py" = ["E402", "F401", "F403", "E501"]
+
+[tool.ruff.lint]
+extend-select = ["UP"]
+ignore = ["F722"]

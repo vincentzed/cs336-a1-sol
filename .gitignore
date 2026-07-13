@@ -1,0 +1,47 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Project artifacts (too large for git)
+data/
+checkpoints/
+logs/
+wandb/
+*.npy
+*.pt
+*.ckpt
+
+# Notebooks — keep if you want; ignored by default
+*.ipynb
+
+# Secrets — never commit. W&B key / tokens go in env vars, not the repo.
+.env
+.env.*
+*.key
+*.secret
+.netrc
+wandb_key*
+
