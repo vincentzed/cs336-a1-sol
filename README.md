@@ -19,13 +19,13 @@ actually submit; see "Measurement" below for why this pedantry exists).
 | Model / venue | Val loss | Notes |
 |---|---|---|
 | **This work — 1× B300** | **2.9497** | L20 + 5-table value embeds + softcap-23 |
-| **This work — 1× B200** (leaderboard hardware) | **2.9655** | L14 + 5-table value embeds + per-head gates + softcap-20; still improving as of this snapshot |
+| **This work — 1× B200** (leaderboard hardware) | **2.9571** | L14 + d_ff 5632 + 5-table value embeds + per-head gates + softcap-20 |
 | Best leaderboard entry ever (Thomas Li, B200) | 3.0354 | private code, public writeup |
 | #2 (Nick Rui, B200) | 3.1003 | |
 | Public baseline we forked (reproduced) | 3.2500 | their claim: 3.2508 — it reproduces |
 
 Run-to-run noise is ±0.0003 on B200 (four-seed replicates), ±0.004-0.007 on B300. The
-margin over the best-ever leaderboard entry on its own hardware is ~0.07 — over a hundred
+margin over the best-ever leaderboard entry on its own hardware is ~0.08 — over two hundred
 noise units. The live frontier (every run, every config) is public on
 [W&B](https://wandb.ai/vincentzed-university-of-waterloo/cs336-a1-sol).
 
@@ -43,7 +43,9 @@ behind it; keep it that way.
 
 **Model** — d_model 1024, 14-20 layers (14 is the measured optimum on B200; the
 compute-optimal depth moved twice as throughput improved), 8 heads (head_dim 128), d_ff
-4096, ReLU² FFN, ctx 512, 32k vocab, tied embeddings. QK-norm, learnable attention scale,
+5632 (up from the inherited 4096 — the wider FFN costs only ~12% throughput on B200 and
+bought the final −0.009; the optimum is not monotone, 4864 loses), ReLU² FFN, ctx 512,
+32k vocab, tied embeddings. QK-norm, learnable attention scale,
 attention output gate, partial RoPE (0.5). **Five value-embedding tables** (0.01·randn,
 gated into attention V at the first/last layers, modded-nanogpt mapping) — the single
 largest architecture lever we measured (−0.025); per-head data-dependent gates add a
@@ -104,6 +106,8 @@ windows; train/eval distribution match beats aesthetics — the packing that hel
 modded-nanogpt helps because *their* val is packed too). Multi-token prediction. Batch
 ramps, batch 128, batch 512. Deeper (24L) and wider (1152) at the old config; deeper again
 (L18+) at the new one. 16 heads. RoPE theta 2048. Frozen norm gains. Sigmoid softcap form.
+EMA horizons other than 0.999 (0.9995 is a disaster, 0.9985 a wash). Decaying the LR tail
+all the way to zero. Muon momentum decay-back over the last 2k steps.
 Seven value-embedding tables (a throughput bug made it moot; five beats three). A "better"
 tokenizer (measured: the legal direction *worsens* the leaderboard number, the gaming
 direction improves it only by shrinking the yardstick — bits/byte gets worse; documented in
@@ -130,9 +134,9 @@ bash scripts/setup_sol_env.sh      # torch 2.12 cu130 + cuDNN 9.24 + quack + GNS
 python scripts/tokenize_owt.py     # full OWT -> uint16 .npy (~2.7B tokens)
 python -m transformer_lm.train_sol \
   --train-tokens data/owt_train_full.npy --val-tokens data/owt_valid.npy --vocab-size 32000 \
-  --d-model 1024 --num-layers 16 --num-heads 8 --d-ff 4096 \
+  --d-model 1024 --num-layers 14 --num-heads 8 --d-ff 5632 \
   --max-seq-len 512 --context-length 512 --batch-size 256 \
-  --total-iters 9300 --max-wall-sec 2700 --warmup-iters 500 --schedule-by-wall \
+  --total-iters 10400 --max-wall-sec 2700 --warmup-iters 500 --schedule-by-wall \
   --lr-schedule wsd --wsd-decay-frac 0.8 --lr-min-ratio 0.067 \
   --muon-lr 8e-3 --adam-lr 1.2e-2 --embed-lr 2.4e-2 --weight-decay 0.1 \
   --ce-mode quack-softcap --logit-softcap 20 --z-loss 0 \
@@ -140,10 +144,12 @@ python -m transformer_lm.train_sol \
   --muon-momentum-warmup 300 --grad-clip 0 --cautious-wd --bf16-mt \
   --value-embeds-k 5 --ve-gates per-head \
   --x0-lambdas --unet-skips --smear --second-embed --xsa \
-  --data-sampling shuffled --eval-ctx 512 --compile
+  --data-sampling shuffled --eval-ctx 512 --compile \
+  --val-interval 1000000 --checkpoint-interval 1000000
 # score what you'd submit:
 python scripts/eval_canon.py CKPT --softcap 20 --ema ckpt/.../ema_final.pt \
-  --num-layers 16 --value-embeds-k 5 --x0-lambdas --unet-skips --smear --second-embed --xsa
+  --num-layers 14 --d-ff 5632 --value-embeds-k 5 --ve-gates per-head \
+  --x0-lambdas --unet-skips --smear --second-embed --xsa
 ```
 
 Calibrate `--total-iters` to your silicon with a 150-step probe first; `--schedule-by-wall`

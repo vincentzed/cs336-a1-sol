@@ -290,6 +290,7 @@ VE5CAP20 = [
     "--x0-lambdas", "--unet-skips", "--smear", "--second-embed", "--xsa",
     "--data-sampling", "shuffled", "--eval-ctx", "512",
     "--checkpoint-interval", "1000000",  # no mid-run saves: never resumed, ~0.85s each = pure waste
+    "--val-interval", "1000000",  # no mid-run vals: default 500 leaked ~20x1.8s/run through wave 6
 ]
 
 
@@ -309,12 +310,13 @@ def wave_b200():
 
 
 @app.function(image=image, gpu="B200", timeout=1800, volumes={"/data": vol})
-def canon_b200(ckpt_dir: str, softcap: float, k: int = 5, layers: int = 20, form: str = "tanh", gates: str = "scalar"):
+def canon_b200(ckpt_dir: str, softcap: float, k: int = 5, layers: int = 20, form: str = "tanh", gates: str = "scalar", d_ff: int = 4096):
     """Canonical full-sweep eval of a volume checkpoint, on B200 (the home frame)."""
     import re
     import subprocess
     import sys
     arch = ["--num-layers", str(layers), "--value-embeds-k", str(k), "--ve-gates", gates,
+            "--d-ff", str(d_ff),
             "--x0-lambdas", "--unet-skips", "--smear", "--second-embed", "--xsa"]
     out = []
     for tag, extra in [("raw", []), ("ema", ["--ema", f"/data/ckpt/{ckpt_dir}/ema_final.pt"])]:
@@ -442,3 +444,11 @@ def wave_b200_6():
     for h in hs:
         name, rc = h.get()
         print(f"DONE {name}: exit={rc}")
+
+
+@app.local_entrypoint()
+def canon_main(ckpt_dir: str, softcap: float = 20.0, k: int = 5, layers: int = 14,
+               form: str = "tanh", gates: str = "per-head", d_ff: int = 4096):
+    """Print the canonical score of a volume checkpoint (modal run swallows bare
+    function return values; entrypoints don't)."""
+    print(f"CANON {ckpt_dir}:", canon_b200.remote(ckpt_dir, softcap, k, layers, form, gates, d_ff))
