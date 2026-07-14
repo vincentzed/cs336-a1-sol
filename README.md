@@ -19,13 +19,13 @@ actually submit; see "Measurement" below for why this pedantry exists).
 | Model / venue | Val loss | Notes |
 |---|---|---|
 | **This work — 1× B300** | **2.9497** | L20 + 5-table value embeds + softcap-23 |
-| **This work — 1× B200** (leaderboard hardware) | **2.9708** | L16 + 5-table value embeds + softcap-20; per-head-gate and shallower-depth variants still improving as of this snapshot |
+| **This work — 1× B200** (leaderboard hardware) | **2.9655** | L14 + 5-table value embeds + per-head gates + softcap-20; still improving as of this snapshot |
 | Best leaderboard entry ever (Thomas Li, B200) | 3.0354 | private code, public writeup |
 | #2 (Nick Rui, B200) | 3.1003 | |
 | Public baseline we forked (reproduced) | 3.2500 | their claim: 3.2508 — it reproduces |
 
-Run-to-run noise is ±0.001 on B200 (three-seed replicates), ±0.004-0.007 on B300. The
-margin over the best-ever leaderboard entry on its own hardware is ~0.06 — roughly sixty
+Run-to-run noise is ±0.0003 on B200 (four-seed replicates), ±0.004-0.007 on B300. The
+margin over the best-ever leaderboard entry on its own hardware is ~0.07 — over a hundred
 noise units. The live frontier (every run, every config) is public on
 [W&B](https://wandb.ai/vincentzed-university-of-waterloo/cs336-a1-sol).
 
@@ -41,7 +41,7 @@ behind it; keep it that way.
 
 ## The recipe (current best)
 
-**Model** — d_model 1024, 16-20 layers (14-16 is the current optimum on B200; the
+**Model** — d_model 1024, 14-20 layers (14 is the measured optimum on B200; the
 compute-optimal depth moved twice as throughput improved), 8 heads (head_dim 128), d_ff
 4096, ReLU² FFN, ctx 512, 32k vocab, tied embeddings. QK-norm, learnable attention scale,
 attention output gate, partial RoPE (0.5). **Five value-embedding tables** (0.01·randn,

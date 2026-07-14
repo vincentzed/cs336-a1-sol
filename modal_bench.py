@@ -91,19 +91,30 @@ CONFIGS = {
               secrets=[wandb_secret], retries=0)
 def train(name: str, module: str, extra: list[str]):
     import os
+    import shutil
     import subprocess
     import sys
     cmd = [sys.executable, "-m", module, *COMMON, *extra,
            "--checkpoint-dir", f"/data/ckpt/{name}", "--wandb-run-name", name]
+    if module.endswith("train_sol"):
+        # mega-cache via the volume: fresh containers otherwise pay 60-120s of
+        # Dynamo/Inductor warmup INSIDE the 45-min budget (~2.5-4% of training time).
+        # Copy in (avoid FUSE writes during the run), copy back + commit after.
+        if os.path.exists("/data/compile_mega.cache"):
+            shutil.copy("/data/compile_mega.cache", "/root/mega.cache")
+            print("compile mega-cache warmed from volume", flush=True)
+        cmd += ["--compile-cache", "/root/mega.cache"]
     # quack cache: NEVER point QUACK_HOME at the Volume (FileLock on FUSE can hang forever).
     # Instead: copy a persisted cache in from the volume, run on local disk, copy back after.
-    import shutil
     if os.path.isdir("/data/quack_cache"):
         shutil.copytree("/data/quack_cache", "/root/.quack", dirs_exist_ok=True)
         print("quack cache warmed from volume", flush=True)
     env = {**os.environ, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}  # reclaim fragmentation
     print(f"[{name}] launching", flush=True)
     rc = subprocess.run(cmd, cwd="/root", env=env).returncode
+    if os.path.exists("/root/mega.cache"):
+        shutil.copy("/root/mega.cache", "/data/compile_mega.cache")
+        print("compile mega-cache persisted", flush=True)
     if os.path.isdir("/root/.quack"):  # persist autotune/JIT cache for the next container
         shutil.copytree("/root/.quack", "/data/quack_cache", dirs_exist_ok=True)
         vol.commit()
@@ -278,6 +289,7 @@ VE5CAP20 = [
     "--grad-clip", "0", "--cautious-wd", "--bf16-mt", "--value-embeds-k", "5",
     "--x0-lambdas", "--unet-skips", "--smear", "--second-embed", "--xsa",
     "--data-sampling", "shuffled", "--eval-ctx", "512",
+    "--checkpoint-interval", "1000000",  # no mid-run saves: never resumed, ~0.85s each = pure waste
 ]
 
 
@@ -297,12 +309,12 @@ def wave_b200():
 
 
 @app.function(image=image, gpu="B200", timeout=1800, volumes={"/data": vol})
-def canon_b200(ckpt_dir: str, softcap: float, k: int = 5, layers: int = 20, form: str = "tanh"):
+def canon_b200(ckpt_dir: str, softcap: float, k: int = 5, layers: int = 20, form: str = "tanh", gates: str = "scalar"):
     """Canonical full-sweep eval of a volume checkpoint, on B200 (the home frame)."""
     import re
     import subprocess
     import sys
-    arch = ["--num-layers", str(layers), "--value-embeds-k", str(k),
+    arch = ["--num-layers", str(layers), "--value-embeds-k", str(k), "--ve-gates", gates,
             "--x0-lambdas", "--unet-skips", "--smear", "--second-embed", "--xsa"]
     out = []
     for tag, extra in [("raw", []), ("ema", ["--ema", f"/data/ckpt/{ckpt_dir}/ema_final.pt"])]:
@@ -386,3 +398,47 @@ def wave_b200_4():
         name, rc = h.get()
         print(f"DONE {name}: exit={rc}")
     print("CANON b200_L16_gates:", cn.get())
+
+
+@app.local_entrypoint()
+def wave_b200_5():
+    """Wave 5: LR retune at the L14g optimum + record statistics. Mega-cache active."""
+    base = [a for a in L16BASE]
+    base[base.index("16", base.index("--num-layers"))] = "14"
+    base[base.index("9300", base.index("--total-iters"))] = "10400"
+    base += ["--ve-gates", "per-head"]
+    legs = {
+        "b200_L14g_s2":  ["--seed", "3"],
+        "b200_L14g_s3":  ["--seed", "4"],
+        "b200_L14g_lr65": ["--muon-lr", "6.5e-3", "--adam-lr", "9.75e-3", "--embed-lr", "1.95e-2"],
+        "b200_L14g_lr10": ["--muon-lr", "1.0e-2", "--adam-lr", "1.5e-2", "--embed-lr", "3.0e-2"],
+    }
+    hs = [train.spawn(n, "transformer_lm.train_sol", base + extra) for n, extra in legs.items()]
+    cn = canon_b200.spawn("b200_L14g", 20.0, 5, 14, "tanh", "per-head")
+    for h in hs:
+        name, rc = h.get()
+        print(f"DONE {name}: exit={rc}")
+    print("CANON b200_L14g:", cn.get())
+
+
+@app.local_entrypoint()
+def wave_b200_6():
+    """Wave 6: cheap unswept levers at the L14g optimum — EMA horizon, LR tail-to-zero,
+    FFN aspect ratio at the new depth, momentum decay-back. Schedule-by-wall means the
+    d_ff legs need no iteration recalibration."""
+    base = [a for a in L16BASE]
+    base[base.index("16", base.index("--num-layers"))] = "14"
+    base[base.index("9300", base.index("--total-iters"))] = "10400"
+    base += ["--ve-gates", "per-head"]
+    legs = {
+        "b200_L14g_ema995": ["--ema-decay", "0.9995"],
+        "b200_L14g_ema985": ["--ema-decay", "0.9985"],
+        "b200_L14g_min0":   ["--lr-min-ratio", "0.0"],
+        "b200_L14g_dff4864": ["--d-ff", "4864"],
+        "b200_L14g_dff5632": ["--d-ff", "5632"],
+        "b200_L14g_mmdl2k": ["--muon-momentum-decay-last", "2000"],
+    }
+    hs = [train.spawn(n, "transformer_lm.train_sol", base + extra) for n, extra in legs.items()]
+    for h in hs:
+        name, rc = h.get()
+        print(f"DONE {name}: exit={rc}")
