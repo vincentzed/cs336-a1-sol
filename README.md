@@ -19,7 +19,7 @@ actually submit; see "Measurement" below for why this pedantry exists).
 | Model / venue | Val loss | Notes |
 |---|---|---|
 | **This work — 1× B300** | **2.9497** | L20 + 5-table value embeds + softcap-23 |
-| **This work — 1× B200** (leaderboard hardware) | **2.9571** | L14 + d_ff 5632 + 5-table value embeds + per-head gates + softcap-20 |
+| **This work — 1× B200** (leaderboard hardware) | **2.9571** | L14 + d_ff 5632 + 5-table value embeds + per-head gates + softcap-20 — [training run](https://wandb.ai/vincentzed-university-of-waterloo/cs336-a1-sol/runs/mhial4jk) |
 | Best leaderboard entry ever (Thomas Li, B200) | 3.0354 | private code, public writeup |
 | #2 (Nick Rui, B200) | 3.1003 | |
 | Public baseline we forked (reproduced) | 3.2500 | their claim: 3.2508 — it reproduces |
