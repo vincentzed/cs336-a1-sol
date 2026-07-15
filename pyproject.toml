@@ -1,37 +1,45 @@
 [project]
 name = "transformer_lm"
 version = "0.1.0"
-description = "Decoder-only Transformer LM + byte-level BPE tokenizer, trained from scratch on TinyStories and OpenWebText."
+description = "Decoder-only Transformer LM + byte-level BPE tokenizer, trained from scratch on OpenWebText. SOL leaderboard configuration."
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "einops>=0.8",
     "jaxtyping>=0.3",
     "numpy>=2.4",
     "psutil>=7",
     "regex>=2026.3.32",
-    "torch>=2.12",
+    "torch==2.12.1",
     "tqdm>=4.67",
     "wandb>=0.25",
-    "matplotlib>=3.10.8",
-    "gradio>=6.13.0",
+    # -- the SOL kernel stack: pip-freeze of the actual record environment --
+    "quack-kernels==0.5.3",            # CuTeDSL fused linear-CE / rmsnorm / rope. 0.6.1 HANGS on B200.
+    "gram-newton-schulz==0.1.6",       # NorMuon orthogonalizer (its stale pins are overridden below)
+    "flash-attn-4[cu13]==4.0.0b21",    # FA4 sm100 attention (b9 is INCOMPATIBLE with cutlass 4.6.0.dev0)
+    "nvidia-cutlass-dsl[cu13]==4.6.0.dev0",
+    "nvidia-cudnn-frontend>=1.26",     # cuDNN itself comes from torch's own exact pin (9.20.0.48)
 ]
 
-# SOL (speed-of-light) extra for the B200/B300 45-min run. Blackwell = sm100 +
-# CUDA 13.3 on this box (torch 2.12 cu13). Only the CLEANLY-RESOLVABLE deps live
-# here; the CuTeDSL chain (cutlass-dsl 4.6.0 + quack 0.6.1 + gram-newton-schulz
-# --no-deps) and FA4-from-source have a version conflict (GNS pins cutlass 4.5.2)
-# and a source build, so they are installed IN ORDER by scripts/setup_sol_env.sh
-# -- run that WHEN A GPU IS FREE (it compiles kernels and needs a device).
-#
-# TE latest (v2.16.1/v2.17) requires only torch>=2.1 -> torch 2.12 is supported,
-# and TE already depends on nvidia-cudnn-frontend>=1.25.
-[project.optional-dependencies]
-sol = [
-    "transformer-engine[pytorch]>=2.16",  # cuDNN fused RMSNorm/attn, FP8; torch>=2.1 (2.12 ok)
-    "nvidia-cudnn-cu13==9.24.0.43",       # LATEST cuDNN; ABI-compatible over torch 2.12/2.13's 9.20
-    "nvidia-cudnn-frontend>=1.26",        # cudnn-frontend python API (base only; not the [cutedsl] extra)
+# gram-newton-schulz 0.1.6 pins quack-kernels==0.5.0 and cutlass-dsl==4.5.2, which
+# conflict with quack 0.5.3 / FA4 (both need cutlass-dsl==4.6.0.dev0). The combination
+# below is the one every record run actually used; GNS works fine on it.
+[tool.uv]
+package = true
+python-preference = "managed"
+prerelease = "allow"
+override-dependencies = [
+    "quack-kernels==0.5.3",
+    "nvidia-cutlass-dsl==4.6.0.dev0",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
 
 [build-system]
 requires = ["uv_build>=0.11.0,<0.12.0"]
@@ -40,10 +48,6 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "transformer_lm"
 module-root = ""
-
-[tool.uv]
-package = true
-python-preference = "managed"
 
 [tool.ruff]
 line-length = 120

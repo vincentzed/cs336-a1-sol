@@ -129,6 +129,19 @@ is bit-stable across attention backends. The canonical record book lives in
 
 ## Reproduction
 
+One command on a single B200 (data download + tokenize, the 45-minute record run,
+canonical eval — everything below, in order):
+
+```bash
+uv run main.py            # add --smoke first for a ~15-min end-to-end environment check
+```
+
+The lockfile pins the exact kernel stack of record — a pip-freeze of the environment the
+number was produced in (torch 2.12.1 cu130, quack 0.5.3 — 0.6.1 hangs on B200 —
+cutlass-dsl 4.6.0.dev0, FA4 4.0.0b21 — b9 is incompatible with that cutlass — cuDNN
+9.20.0.48). Expected result:
+val loss 2.957 ± 0.001 (canonical protocol, EMA weights). Step by step, the same thing:
+
 ```bash
 bash scripts/setup_sol_env.sh      # torch 2.12 cu130 + cuDNN 9.24 + quack + GNS + FA4
 python scripts/tokenize_owt.py     # full OWT -> uint16 .npy (~2.7B tokens)

@@ -452,3 +452,18 @@ def canon_main(ckpt_dir: str, softcap: float = 20.0, k: int = 5, layers: int = 1
     """Print the canonical score of a volume checkpoint (modal run swallows bare
     function return values; entrypoints don't)."""
     print(f"CANON {ckpt_dir}:", canon_b200.remote(ckpt_dir, softcap, k, layers, form, gates, d_ff))
+
+
+@app.function(image=image, timeout=300)
+def freeze():
+    """Exact kernel-stack versions in this image — the environment of record."""
+    import subprocess
+    import sys
+    out = subprocess.run([sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True).stdout
+    return "\n".join(l for l in out.splitlines() if any(
+        k in l.lower() for k in ("flash", "cutlass", "quack", "torch", "cudnn", "tvm", "dlpack", "einops")))
+
+
+@app.local_entrypoint()
+def freeze_main():
+    print("FREEZE:\n" + freeze.remote())
